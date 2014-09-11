@@ -1,6 +1,8 @@
 package com.judking.hive.inputformat;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -9,6 +11,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import org.apache.commons.lang.ArrayUtils;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.api.ThriftHiveMetastore.Processor.open_txns;
 import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
@@ -24,19 +28,33 @@ import org.apache.hadoop.mapred.Reporter;
 
 public class JudCombineHiveInputFormat<K extends WritableComparable, V extends Writable>
 					extends CombineHiveInputFormat<WritableComparable, Writable> {
-
+	
+	private final String META_FILE = "admonitor.meta";
+    private final String META_FILE_ADDRESS = "/admonitor/metafile/meta_file.txt";
+    private final String FILE_PART = "part-r";
+    private Map<String,String> slice2host = null;
 	
 	@Override
-	public InputSplit[] getSplits(JobConf job, int numSplits)
-			throws IOException {
+	public InputSplit[] getSplits(JobConf job, int numSplits) throws IOException {
 		InputSplit[] iss = super.getSplits(job, numSplits);
-		InputSplit[] formatedIss = new InputSplit[3]; 
-		Map<String, String> sliceid2host = new HashMap<String, String>();
-		sliceid2host.put("1", "k1211.mzhen.cn");
-		sliceid2host.put("2", "k1216.mzhen.cn");
-		sliceid2host.put("3", "k1226.mzhen.cn");
-		Map<String, List<SplitInfo>> splitGroups = new HashMap<String, List<SplitInfo>>();
 		
+		//获得sliceid对应host的Map
+		FileSystem fs = FileSystem.get(job);
+		if(slice2host==null) {
+			String  metapath= job.get(META_FILE,META_FILE_ADDRESS);
+			FSDataInputStream fsi = fs.open(new Path(metapath));
+			BufferedReader br = new BufferedReader(new InputStreamReader(fsi));
+			String line=null;
+			slice2host = new HashMap<String,String>();
+			while((line=br.readLine())!=null){
+				String[] kv = line.split(",");
+				if(kv.length==2)
+					slice2host.put(kv[0],kv[1]);
+			}
+		}
+		
+		//将返回的InputSplit按照sliceid进行重组
+		Map<String, List<SplitInfo>> splitGroups = new HashMap<String, List<SplitInfo>>();
 		for(int i = 0; i < iss.length; ++i)	{
 			InputSplit is = iss[i];
 			if(is instanceof CombineHiveInputSplit)	{
@@ -45,7 +63,17 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 				long[] starts = hsplit.getStartOffsets();
 				long[] lengths = hsplit.getLengths();
 				for(int j = 0; j < files.length; ++j)	{
-					SplitInfo splitInfo = new SplitInfo(files[j], starts[j], lengths[j]);
+					SplitInfo splitInfo = null;
+					try	{
+						splitInfo = new SplitInfo(files[j], starts[j], lengths[j]);
+					} catch(Exception e)	{
+						System.out.println("#JUDKING_ERROR: Generating SplitInfo fails. path=["+files[j].toUri()+"], errMsg=["+e.getMessage()+"]");
+						continue;
+					}
+					if(slice2host.containsKey(splitInfo.getSliceid()) == false)	{
+						System.out.println("#JUDKING_ERROR: sliceid is not in splitInfo. path=["+files[j].toUri()+"], sliceid=["+splitInfo.getSliceid()+"]");
+						continue;
+					}
 					List<SplitInfo> splitInfos = splitGroups.get(splitInfo.getSliceid());
 					if(splitInfos == null)
 						splitInfos = new ArrayList<SplitInfo>();
@@ -54,7 +82,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 				}
 			}
 			else	{
-				System.out.println("#JUDKING: InputSplit is not CombineHiveInputSplit. InputSplit=["+is+"]");
+				System.out.println("#JUDKING_ERROR: InputSplit is not CombineHiveInputSplit. InputSplit=["+is+"]");
 			}
 		}
 		
@@ -63,6 +91,8 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		}catch(Exception e)	{
 			e.printStackTrace();
 		}
+
+		//根据重组后的SplitInfo，构造新的InputSplit数组
 		List<InputSplit> rtn = new ArrayList<InputSplit>();
 		for(Entry<String, List<SplitInfo>> entry : splitGroups.entrySet())	{
 			String sliceid = entry.getKey();
@@ -78,7 +108,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 				lengths[i] = si.getLength();
 			}
 			String[] locations = new String[1];
-			locations[0] = sliceid2host.get(sliceid);
+			locations[0] = slice2host.get(sliceid);
 			org.apache.hadoop.mapred.lib.CombineFileSplit cfs = 
 										new org.apache.hadoop.mapred.lib.CombineFileSplit(
 															job, 
@@ -93,7 +123,85 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		}
 		
 		return rtn.toArray(new InputSplit[rtn.size()]);
+		
+		
 	}
+
+	
+	/**
+	 * 测试用例，将hive_combine_test表中的数据按照part-i分给指定的mapper。
+	 * @param hsplit
+	 * @param i
+	 * @throws IOException
+	 */
+//	@Override
+//	public InputSplit[] getSplits(JobConf job, int numSplits)
+//			throws IOException {
+//		InputSplit[] iss = super.getSplits(job, numSplits);
+//		InputSplit[] formatedIss = new InputSplit[3]; 
+//		Map<String, String> sliceid2host = new HashMap<String, String>();
+//		sliceid2host.put("1", "k1211.mzhen.cn");
+//		sliceid2host.put("2", "k1216.mzhen.cn");
+//		sliceid2host.put("3", "k1226.mzhen.cn");
+//		Map<String, List<SplitInfo>> splitGroups = new HashMap<String, List<SplitInfo>>();
+//		
+//		for(int i = 0; i < iss.length; ++i)	{
+//			InputSplit is = iss[i];
+//			if(is instanceof CombineHiveInputSplit)	{
+//				CombineHiveInputSplit hsplit = (CombineHiveInputSplit) is;
+//				Path[] files = hsplit.getPaths();
+//				long[] starts = hsplit.getStartOffsets();
+//				long[] lengths = hsplit.getLengths();
+//				for(int j = 0; j < files.length; ++j)	{
+//					SplitInfo splitInfo = new SplitInfo(files[j], starts[j], lengths[j]);
+//					List<SplitInfo> splitInfos = splitGroups.get(splitInfo.getSliceid());
+//					if(splitInfos == null)
+//						splitInfos = new ArrayList<SplitInfo>();
+//					splitInfos.add(splitInfo);
+//					splitGroups.put(splitInfo.getSliceid(), splitInfos);
+//				}
+//			}
+//			else	{
+//				System.out.println("#JUDKING: InputSplit is not CombineHiveInputSplit. InputSplit=["+is+"]");
+//			}
+//		}
+//		
+//		try	{
+//			System.out.println("#JUDKING: splitGroups=["+splitGroups+"]");
+//		}catch(Exception e)	{
+//			e.printStackTrace();
+//		}
+//		List<InputSplit> rtn = new ArrayList<InputSplit>();
+//		for(Entry<String, List<SplitInfo>> entry : splitGroups.entrySet())	{
+//			String sliceid = entry.getKey();
+//			List<SplitInfo> splitInfos = entry.getValue();
+//			System.out.println("#JUDKING: sliceid=["+sliceid+"], List<SplitInfo>=["+splitInfos+"]");
+//			Path[] files = new Path[splitInfos.size()];
+//			long[] starts = new long[splitInfos.size()];
+//			long[] lengths = new long[splitInfos.size()];
+//			for(int i = 0; i < splitInfos.size(); ++i)	{
+//				SplitInfo si = splitInfos.get(i);
+//				files[i] = si.getFile();
+//				starts[i] = si.getStart();
+//				lengths[i] = si.getLength();
+//			}
+//			String[] locations = new String[1];
+//			locations[0] = sliceid2host.get(sliceid);
+//			org.apache.hadoop.mapred.lib.CombineFileSplit cfs = 
+//										new org.apache.hadoop.mapred.lib.CombineFileSplit(
+//															job, 
+//															files, 
+//															starts, 
+//															lengths, 
+//															locations);
+//			org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim iqo = 
+//										new org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim(cfs);
+//			CombineHiveInputSplit chis = new CombineHiveInputSplit(job, iqo);
+//			rtn.add(chis);
+//		}
+//		
+//		return rtn.toArray(new InputSplit[rtn.size()]);
+//	}
 	
 //	@Override
 //	public InputSplit[] getSplits(JobConf job, int numSplits)

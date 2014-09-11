@@ -18,15 +18,15 @@ public class main {
 	public static void main(String[] args)	{
 		//CombineHiveInputFormat<WritableComparable, Writable> ll;
 		
-//		Path p = new Path("/user/supertool/zhudi/hiveTest/20140902/0902_1.txt");
-//		String s = p.toUri().toString();
-//		s = s.substring(s.lastIndexOf('_')+1, s.lastIndexOf('.'));
-//		System.out.println(s);
+		Path p = new Path("/tong/data/output/dailyMerger/20140901/minisite_part-r-00000");
+		String s = p.toUri().toString();
+		s = String.valueOf(Integer.parseInt(s.substring(s.lastIndexOf('-')+1), 10));
+		System.out.println(s);
 		
-		List<A> aa = new ArrayList<A>();
-		aa.add(new A());
-		aa.add(new A());
-		System.out.println(aa);
+//		List<A> aa = new ArrayList<A>();
+//		aa.add(new A());
+//		aa.add(new A());
+//		System.out.println(aa);
 		
 //		Map<String, String> m = new HashMap<String, String>();
 //		m.put("1", "2");

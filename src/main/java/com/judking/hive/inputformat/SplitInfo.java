@@ -15,7 +15,7 @@ public class SplitInfo {
 		this.length = length;
 
 		String s = file.toUri().toString();
-		sliceid = s.substring(s.lastIndexOf('_')+1, s.lastIndexOf('.'));
+		sliceid = String.valueOf(Integer.parseInt(s.substring(s.lastIndexOf('-')+1), 10));
 	}
 
 	public Path getFile() {
