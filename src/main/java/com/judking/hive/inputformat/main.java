@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang.NumberUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
 import org.apache.hadoop.mapred.TextInputFormat;
@@ -18,10 +19,12 @@ public class main {
 	public static void main(String[] args)	{
 		//CombineHiveInputFormat<WritableComparable, Writable> ll;
 		
-		Path p = new Path("/tong/data/output/dailyMerger/20140901/minisite_part-r-00000");
-		String s = p.toUri().toString();
-		s = String.valueOf(Integer.parseInt(s.substring(s.lastIndexOf('-')+1), 10));
-		System.out.println(s);
+		System.out.println(NumberUtils.compare(2L, 2L));
+		
+//		Path p = new Path("/tong/data/output/dailyMerger/20140901/minisite_part-r-00000");
+//		String s = p.toUri().toString();
+//		s = String.valueOf(Integer.parseInt(s.substring(s.lastIndexOf('-')+1), 10));
+//		System.out.println(s);
 		
 //		List<A> aa = new ArrayList<A>();
 //		aa.add(new A());

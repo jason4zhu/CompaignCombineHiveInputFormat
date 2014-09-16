@@ -87,7 +87,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		}
 		
 		try	{
-			System.out.println("#JUDKING: splitGroups=["+splitGroups+"]");
+			//System.out.println("#JUDKING: splitGroups=["+splitGroups+"]");
 		}catch(Exception e)	{
 			e.printStackTrace();
 		}
@@ -97,7 +97,8 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		for(Entry<String, List<SplitInfo>> entry : splitGroups.entrySet())	{
 			String sliceid = entry.getKey();
 			List<SplitInfo> splitInfos = entry.getValue();
-			System.out.println("#JUDKING: sliceid=["+sliceid+"], List<SplitInfo>=["+splitInfos+"]");
+			splitInfos = SplitInfo.mergeSplitFiles(splitInfos);
+			//System.out.println("#JUDKING: sliceid=["+sliceid+"], List<SplitInfo>=["+splitInfos+"]");
 			Path[] files = new Path[splitInfos.size()];
 			long[] starts = new long[splitInfos.size()];
 			long[] lengths = new long[splitInfos.size()];
@@ -123,7 +124,6 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		}
 		
 		return rtn.toArray(new InputSplit[rtn.size()]);
-		
 		
 	}
 
