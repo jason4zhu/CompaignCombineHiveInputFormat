@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -33,6 +35,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
     private final String META_FILE_ADDRESS = "/admonitor/metafile/meta_file.txt";
     private final String FILE_PART = "part-r";
     private Map<String,String> slice2host = null;
+    public static final Log LOG = LogFactory.getLog(JudCombineHiveInputFormat.class.getName());
 	
 	@Override
 	public InputSplit[] getSplits(JobConf job, int numSplits) throws IOException {
@@ -67,8 +70,9 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 					try	{
 						splitInfo = new SplitInfo(files[j], starts[j], lengths[j]);
 					} catch(Exception e)	{
-						System.out.println("#JUDKING_ERROR: Generating SplitInfo fails. path=["+files[j].toUri()+"], errMsg=["+e.getMessage()+"]");
-						continue;
+						//System.out.println("#JUDKING_ERROR: Generating SplitInfo fails. path=["+files[j].toUri()+"], errMsg=["+e.getMessage()+"]");
+						LOG.warn("#JUDKING_FLAG_1: inputSplitSize=["+iss.length+"]");
+						return iss;
 					}
 					if(slice2host.containsKey(splitInfo.getSliceid()) == false)	{
 						System.out.println("#JUDKING_ERROR: sliceid is not in splitInfo. path=["+files[j].toUri()+"], sliceid=["+splitInfo.getSliceid()+"]");
@@ -120,6 +124,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 			org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim iqo = 
 										new org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim(cfs);
 			CombineHiveInputSplit chis = new CombineHiveInputSplit(job, iqo);
+			
 			rtn.add(chis);
 		}
 		
@@ -127,7 +132,8 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		
 	}
 
-	
+
+
 	/**
 	 * 测试用例，将hive_combine_test表中的数据按照part-i分给指定的mapper。
 	 * @param hsplit
