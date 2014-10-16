@@ -3,6 +3,7 @@ package com.judking.hive.inputformat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -13,13 +14,32 @@ import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
 import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapred.lib.CombineFileInputFormat;
 
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.hash.HashFunction;
+
 
 
 public class main {
 	public static void main(String[] args)	{
 		//CombineHiveInputFormat<WritableComparable, Writable> ll;
 		
-		System.out.println(NumberUtils.compare(2L, 2L));
+//		Multimap<String, Integer> mm = ArrayListMultimap.create();
+//		mm.put("11", 2);
+//		mm.put("11", 3);
+//		mm.put("11", 2);
+//		mm.put("22", 111);
+//		for (String key : new HashSet<String>(mm.keys()))	{
+//			System.out.println(key);
+//			List<Integer> l = new ArrayList<Integer>(mm.get(key));
+//			System.out.println(l);
+//		}
+		
+		
+		System.out.println(Math.abs("hdfs://ns1/tmp/hive-monitor/hive_2014-10-15_14-08-30_808_4704385148168585552-1/-mr-10002/000018_0".hashCode()) % 5);
+		
+//		System.out.println(NumberUtils.compare(2L, 2L));
 		
 //		Path p = new Path("/tong/data/output/dailyMerger/20140901/minisite_part-r-00000");
 //		String s = p.toUri().toString();

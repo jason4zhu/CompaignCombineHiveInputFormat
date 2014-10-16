@@ -6,7 +6,6 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -29,26 +28,15 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.Reporter;
 
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Multimap;
-import com.jcraft.jsch.Logger;
-
-public class JudCombineHiveInputFormat<K extends WritableComparable, V extends Writable>
+public class JudCombineHiveInputFormatOld<K extends WritableComparable, V extends Writable>
 					extends CombineHiveInputFormat<WritableComparable, Writable> {
 	
 	private final String META_FILE = "admonitor.meta";
     private final String META_FILE_ADDRESS = "/admonitor/metafile/meta_file.txt";
     private final String FILE_PART = "part-r";
     private Map<String,String> slice2host = null;
-    public static final Log LOG = LogFactory.getLog(JudCombineHiveInputFormat.class.getName());
+    public static final Log LOG = LogFactory.getLog(JudCombineHiveInputFormatOld.class.getName());
 	
-    /**
-     * 最新策略：
-     * 如果文件路径符合*-sliceid，直接按照sliceid分配到指定mapper；
-     * 如果不符合，则按照文件路径的hash值取模后分配到指定mapper。
-     * 对于需要分配到相同mapper服务器的上述两种情况，根据InputFormatClassName分别打包到对应的InputSplit中。
-     * 
-     */
 	@Override
 	public InputSplit[] getSplits(JobConf job, int numSplits) throws IOException {
 		InputSplit[] iss = super.getSplits(job, numSplits);
@@ -69,7 +57,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 		}
 		
 		//将返回的InputSplit按照sliceid进行重组
-		Multimap<String, SplitInfo> splitGroups = ArrayListMultimap.create();  //Map<sliceid, SplitInfo>
+		Map<String, List<SplitInfo>> splitGroups = new HashMap<String, List<SplitInfo>>();
 		for(int i = 0; i < iss.length; ++i)	{
 			InputSplit is = iss[i];
 			if(is instanceof CombineHiveInputSplit)	{
@@ -78,65 +66,77 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
 				long[] starts = hsplit.getStartOffsets();
 				long[] lengths = hsplit.getLengths();
 				String inputFormatClassName = hsplit.inputFormatClassName();
-				
 				for(int j = 0; j < files.length; ++j)	{
-					SplitInfo splitInfo = new SplitInfo(inputFormatClassName, files[j], starts[j], lengths[j], slice2host.size());
-					if(slice2host.containsKey(splitInfo.getSliceid()) == false)	{
-						throw new IOException("#JUDKING_ERROR: sliceid is not in range[0, "+slice2host.size()+"). path=["+files[j].toUri()+"], sliceid=["+splitInfo.getSliceid()+"]");
+					SplitInfo splitInfo = null;
+					try	{
+						splitInfo = new SplitInfo(inputFormatClassName, files[j], starts[j], lengths[j], slice2host.size());
+					} catch(Exception e)	{
+						//System.out.println("#JUDKING_ERROR: Generating SplitInfo fails. path=["+files[j].toUri()+"], errMsg=["+e.getMessage()+"]");
+						LOG.error("#JUDKING_FLAG_1: inputSplitSize=["+iss.length+"], errMsg=["+e.getMessage()+"]");
+						for(InputSplit iis : Arrays.asList(iss))	{
+							LOG.error("InputSplit=["+iis.toString()+"]");
+						}
+						return iss;
 					}
-					splitGroups.put(splitInfo.getSliceid(), splitInfo);
+					if(slice2host.containsKey(splitInfo.getSliceid()) == false)	{
+						System.out.println("#JUDKING_ERROR: sliceid is not in splitInfo. path=["+files[j].toUri()+"], sliceid=["+splitInfo.getSliceid()+"]");
+						continue;
+					}
+					List<SplitInfo> splitInfos = splitGroups.get(splitInfo.getSliceid());
+					if(splitInfos == null)
+						splitInfos = new ArrayList<SplitInfo>();
+					splitInfos.add(splitInfo);
+					splitGroups.put(splitInfo.getSliceid(), splitInfos);
 				}
 			}
 			else	{
-				throw new IOException("#JUDKING_ERROR: InputSplit is not CombineHiveInputSplit. InputSplit=["+is+"]");
+				System.out.println("#JUDKING_ERROR: InputSplit is not CombineHiveInputSplit. InputSplit=["+is+"]");
 			}
 		}
+		
+		try	{
+			//System.out.println("#JUDKING: splitGroups=["+splitGroups+"]");
+		}catch(Exception e)	{
+			e.printStackTrace();
+		}
 
-		
-		
 		//根据重组后的SplitInfo，构造新的InputSplit数组
 		List<InputSplit> rtn = new ArrayList<InputSplit>();
-		for (String sliceid : new HashSet<String>(splitGroups.keys()))	{
-			List<SplitInfo> splitInfos = new ArrayList<SplitInfo>(splitGroups.get(sliceid));
-			//对属于同一个sliceid下的所有SplitInfo，再按照InputFormatClassName进行分组
-			Multimap<String, SplitInfo> chunkOnInputFormatClass = SplitInfo.groupByInputFormatClassName(splitInfos);  //Map<InputFormatClassName, SplitInfo>
-			for(String curInputFormatClassName : new HashSet<String>(chunkOnInputFormatClass.keys()))	{
-				List<SplitInfo> curSplitInfos = new ArrayList<SplitInfo>(chunkOnInputFormatClass.get(curInputFormatClassName));
-				curSplitInfos = SplitInfo.mergeSplitFiles(curSplitInfos, slice2host.size());
-				
-				Path[] files = new Path[curSplitInfos.size()];
-				long[] starts = new long[curSplitInfos.size()];
-				long[] lengths = new long[curSplitInfos.size()];
-				for(int i = 0; i < curSplitInfos.size(); ++i)	{
-					SplitInfo si = curSplitInfos.get(i);
-					files[i] = si.getFile();
-					starts[i] = si.getStart();
-					lengths[i] = si.getLength();
-				}
-				String[] locations = new String[1];
-				locations[0] = slice2host.get(sliceid);
-				org.apache.hadoop.mapred.lib.CombineFileSplit cfs = 
-											new org.apache.hadoop.mapred.lib.CombineFileSplit(
-																job, 
-																files, 
-																starts, 
-																lengths, 
-																locations);
-				org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim iqo = 
-											new org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim(cfs);
-				CombineHiveInputSplit chis = new CombineHiveInputSplit(job, iqo);
-				chis.setInputFormatClassName(curInputFormatClassName);
-				
-				LOG.info("JUDKING_INPUT_SPLIT: InputSplit=["+chis+"]");
-				rtn.add(chis);
+		for(Entry<String, List<SplitInfo>> entry : splitGroups.entrySet())	{
+			String sliceid = entry.getKey();
+			List<SplitInfo> splitInfos = entry.getValue();
+			splitInfos = SplitInfo.mergeSplitFiles(splitInfos, slice2host.size());
+			//System.out.println("#JUDKING: sliceid=["+sliceid+"], List<SplitInfo>=["+splitInfos+"]");
+			Path[] files = new Path[splitInfos.size()];
+			long[] starts = new long[splitInfos.size()];
+			long[] lengths = new long[splitInfos.size()];
+			for(int i = 0; i < splitInfos.size(); ++i)	{
+				SplitInfo si = splitInfos.get(i);
+				files[i] = si.getFile();
+				starts[i] = si.getStart();
+				lengths[i] = si.getLength();
 			}
+			String[] locations = new String[1];
+			locations[0] = slice2host.get(sliceid);
+			org.apache.hadoop.mapred.lib.CombineFileSplit cfs = 
+										new org.apache.hadoop.mapred.lib.CombineFileSplit(
+															job, 
+															files, 
+															starts, 
+															lengths, 
+															locations);
+			org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim iqo = 
+										new org.apache.hadoop.hive.shims.HadoopShimsSecure.InputSplitShim(cfs);
+			CombineHiveInputSplit chis = new CombineHiveInputSplit(job, iqo);
+			
+			rtn.add(chis);
 		}
 		
 		return rtn.toArray(new InputSplit[rtn.size()]);
 		
 	}
 
-	
+
 
 	/**
 	 * 测试用例，将hive_combine_test表中的数据按照part-i分给指定的mapper。
