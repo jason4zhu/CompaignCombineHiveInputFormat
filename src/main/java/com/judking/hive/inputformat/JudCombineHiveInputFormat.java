@@ -41,7 +41,7 @@ public class JudCombineHiveInputFormat<K extends WritableComparable, V extends W
     private final String FILE_PART = "part-r";
     private Map<String,String> slice2host = null;
     public static final Log LOG = LogFactory.getLog(JudCombineHiveInputFormat.class.getName());
-	
+    org.apache.hadoop.mapred.TextInputFormat t;
     /**
      * 最新策略：
      * 如果文件路径符合*-sliceid，直接按照sliceid分配到指定mapper；
